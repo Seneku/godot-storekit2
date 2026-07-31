@@ -65,10 +65,20 @@ them.
 ## Building
 
 `scripts/make_release.sh` already produces debug and release xcframeworks and
-generates the Godot headers on first run. It must be pointed at **Godot 4.7.1**
-headers — do not substitute an older engine binary, as the template's
-`dependencies.lock.json` pins the engine and the ABI is not stable across
-versions.
+generates the Godot headers on first run. The `godot` submodule is pinned to
+**4.7.1-stable** (`a13da4f`) on this branch, moved from upstream's pointer,
+because the ABI is not stable across versions and the consuming template pins
+the same engine. Do not substitute an older engine binary.
+
+Header generation runs `scons` for twenty seconds and then kills it, which is
+enough to emit the `*.gen.h` files without building the engine. `scons` is a
+build-time requirement (`brew install scons`).
+
+**Upstream v0.2 does not compile against 4.7.1 at all**, before any of this
+fork's changes: `VARIANT_ENUM_CAST` moved to `core/variant/type_info.h` and is
+no longer reached transitively, so the macro at the foot of `godot-storekit2.h`
+parses as an unknown type. Verified by building the pristine tag. That include
+is fixed on this branch.
 
 Publish as a tagged release; the template pins it by URL and SHA-256 in
 `dependencies.lock.json` alongside AdMob and Play Billing, and

@@ -4,6 +4,6 @@ Pods/
 # Build artifacts
 /bin/
 
-# Local build inputs and outputs
-godot/
+# Build outputs. `godot/` is a tracked submodule, deliberately pinned to the
+# engine this fork targets, so it is not ignored here.
 bin/
