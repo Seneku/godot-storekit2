@@ -3,3 +3,7 @@ Pods/
 
 # Build artifacts
 /bin/
+
+# Local build inputs and outputs
+godot/
+bin/

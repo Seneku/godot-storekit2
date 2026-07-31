@@ -4,6 +4,12 @@
 
 #include "core/string/ustring.h"
 #include "core/variant/dictionary.h"
+// `VARIANT_ENUM_CAST` lives here as of Godot 4.7.1 and is no longer reached
+// transitively. Without it the macro at the bottom of this file is parsed as an
+// unknown type, which also swallows the enum and produces errors that look like
+// the class body is broken. Upstream v0.2 does not compile against 4.7.1 for
+// this reason alone.
+#include "core/variant/type_info.h"
 
 @class GodotStoreKit2Proxy;
 @class TransactionData;
@@ -37,6 +43,10 @@ public:
 	Signal request_product_price(String p_product_id);
 	Signal purchase_product(String p_product_id, int p_quantity = 1);
 	Signal sync();
+	// Purchases are no longer finished automatically, so the app must say when
+	// it is done with one. The definitive answer arrives on
+	// `transaction_finished`, not from the return value.
+	Signal finish_transaction(String p_transaction_id);
 	GodotStoreKit2();
 };
 

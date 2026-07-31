@@ -37,6 +37,9 @@ public final class GodotStoreKit2Proxy: NSObject,
 
 		let transData = TransactionData()
 		transData.productId = transaction.productID
+		transData.transactionId = String(transaction.id)
+		transData.originalTransactionId = String(transaction.originalID)
+		transData.jws = verificationResult.jwsRepresentation
 
 		if let revocationDate = transaction.revocationDate {
 			// Remove access to the product identified by transaction.productID.
@@ -157,20 +160,60 @@ public final class GodotStoreKit2Proxy: NSObject,
 		case .userCancelled:
 			data.transactionState = TransactionState.Canceled.rawValue
 		case .success(let verificationResult):
+			// Deliberately NOT finished here. This is the whole point of the
+			// fork: the transaction stays in `Transaction.unfinished` until the
+			// app has validated it server-side and calls `finishTransaction`.
+			// Finishing it now would consume the purchase before anyone could
+			// refuse it, and would lose it entirely if the app died mid-flight.
+			data.jws = verificationResult.jwsRepresentation
 			switch verificationResult {
 			case .verified(let transaction):
-				await transaction.finish()
+				data.transactionId = String(transaction.id)
+				data.originalTransactionId = String(transaction.originalID)
+				data.purchaseDate = transaction.purchaseDate
 				data.transactionState = TransactionState.Purchased.rawValue
 			case .unverified(let transaction, let verificationError):
-				await transaction.finish()
+				// Signature check failed, so this must never be granted. It is
+				// still left unfinished, and still named, so the app can clear
+				// it deliberately rather than having it silently disappear.
+				data.transactionId = String(transaction.id)
+				data.originalTransactionId = String(transaction.originalID)
 				data.transactionState = TransactionState.Failed.rawValue
-				data.error = verificationError.errorDescription!
+				data.error = verificationError.errorDescription ?? "Transaction failed verification."
 			}
 		@unknown default:
 			data.error = "unknown"
 			data.transactionState = TransactionState.Failed.rawValue
 		}
 		return data
+	}
+
+	/// Finish a transaction the app has finished with — normally once a server
+	/// has validated it. Throws when no unfinished transaction carries the id,
+	/// which is the honest answer: either it was finished already, or the id is
+	/// wrong, and the caller must not treat either as success.
+	public func finishTransaction(transactionId: String) async throws -> Void {
+		for await verificationResult in Transaction.unfinished {
+			let transaction: Transaction
+			switch verificationResult {
+			case .verified(let value):
+				transaction = value
+			case .unverified(let value, _):
+				transaction = value
+			}
+			if String(transaction.id) == transactionId {
+				await transaction.finish()
+				return
+			}
+		}
+		throw NSError(
+			domain: "GodotStoreKit2Proxy",
+			code: 2,
+			userInfo: [
+				NSLocalizedDescriptionKey:
+					"No unfinished transaction with id \(transactionId)."
+			]
+		)
 	}
 
 	public func restorePurchases() async throws -> Void {
@@ -211,6 +254,19 @@ public class TransactionData: NSObject {
 	public var error = ""
 	public var purchaseDate: Date? = nil
 	public var revocationDate: Date? = nil
+
+	/// Stable identity for this transaction. The consuming app uses it as the
+	/// idempotency key when validating, and to name the transaction it wants
+	/// finished later. Upstream never surfaced it, which is why validation
+	/// could not be correlated to a purchase.
+	public var transactionId = ""
+	/// The original purchase for a restore or a renewal. For a first purchase
+	/// this equals `transactionId`.
+	public var originalTransactionId = ""
+	/// The signed JWS representation, which is the only thing a server can
+	/// verify against Apple's public keys. Without it there is nothing to
+	/// validate and the client would be trusting itself.
+	public var jws = ""
 }
 
 @objcMembers
