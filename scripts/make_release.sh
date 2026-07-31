@@ -9,17 +9,29 @@ if [[ $(find godot -name '*.gen.h' | wc -l | awk '{$1=$1};1') == 0 ]]; then
 	./scripts/generate_headers.sh
 fi
 
-# Build archives
-xcrun xcodebuild archive -project ${PLUGIN_NAME}.xcodeproj -scheme ${PLUGIN_NAME} -destination "generic/platform=iOS" -archivePath "bin/archives/${PLUGIN_NAME}.debug" -configuration Debug
-xcrun xcodebuild archive -project ${PLUGIN_NAME}.xcodeproj -scheme ${PLUGIN_NAME} -destination "generic/platform=iOS" -archivePath "bin/archives/${PLUGIN_NAME}.release" -configuration Release
+# Build archives. Simulator slices are built as well as device ones: a
+# device-only xcframework makes every consuming project fail to link the moment
+# anyone builds for the Simulator, and the AdMob plugin this sits beside ships
+# both. SKIP_INSTALL=NO is what puts the static library into the archive.
+for CONFIG in Debug Release; do
+	LOWER=$(echo "${CONFIG}" | tr '[:upper:]' '[:lower:]')
+	xcrun xcodebuild archive -project ${PLUGIN_NAME}.xcodeproj -scheme ${PLUGIN_NAME} \
+		-destination "generic/platform=iOS" \
+		-archivePath "bin/archives/${PLUGIN_NAME}.${LOWER}" -configuration ${CONFIG} \
+		SKIP_INSTALL=NO
+	xcrun xcodebuild archive -project ${PLUGIN_NAME}.xcodeproj -scheme ${PLUGIN_NAME} \
+		-destination "generic/platform=iOS Simulator" \
+		-archivePath "bin/archives/${PLUGIN_NAME}.${LOWER}.sim" -configuration ${CONFIG} \
+		SKIP_INSTALL=NO
+done
 
 # Build xcframework
-xcrun xcodebuild -create-xcframework \
-		-archive bin/archives/${PLUGIN_NAME}.debug.xcarchive -library lib${PLUGIN_NAME}.a \
-		-output bin/xcframeworks/${PLUGIN_NAME}.debug.xcframework
-xcrun xcodebuild -create-xcframework \
-		-archive bin/archives/${PLUGIN_NAME}.release.xcarchive -library lib${PLUGIN_NAME}.a \
-		-output bin/xcframeworks/${PLUGIN_NAME}.release.xcframework
+for LOWER in debug release; do
+	xcrun xcodebuild -create-xcframework \
+			-archive bin/archives/${PLUGIN_NAME}.${LOWER}.xcarchive -library lib${PLUGIN_NAME}.a \
+			-archive bin/archives/${PLUGIN_NAME}.${LOWER}.sim.xcarchive -library lib${PLUGIN_NAME}.a \
+			-output bin/xcframeworks/${PLUGIN_NAME}.${LOWER}.xcframework
+done
 
 # Move all to release folder
 rm -rf bin/${PLUGIN_NAME}
